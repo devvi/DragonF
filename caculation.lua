@@ -33,6 +33,8 @@ local simulate = true
 local refreshScreen = true
 local debugStrs = {}
 
+local currentWave = 0
+
 local function pushDebugStr(str)
 	table.insert(debugStrs," time: " .. totalTime .. " "..str)
 end
@@ -67,7 +69,7 @@ end
 
 local bullet1 = {
 	type = BULLET,
-	attack = 70,
+	attack = 400,
 	speed = 600,
 	pos = nil
 }
@@ -106,10 +108,126 @@ local DRAGON_SEP =  30
 local TOTAL_WIDTH_DRAGONS = DRAGON_WIDTH * COUNTPERROW + DRAGON_SEP * (COUNTPERROW - 1)
 
 local dragon1 = {
-	hp = 400,
-	speed = 200,
-	pos = nil
+	hp = 200,
+	speed = 300,
+	pos = nil,
+	render = "W",
+	p = 0,
+	currentNum = 0,
+	needNum = 0,
+	priority = 1,
 }
+
+local dragon2 = {
+	hp = 500,
+	speed = 300,
+	pos = nil,
+	render = "Y",
+	p = 0,
+	currentNum = 0,
+	needNum = 0,
+	priority = 2,
+}
+
+local dragon3 = {
+	hp = 1250,
+	speed = 300,
+	pos = nil,
+	render = "R",
+	p = 0,
+	currentNum = 0,
+	needNum = 0,
+	priority = 3,
+}
+
+local dragon4 = {
+	hp = 3125,
+	speed = 300,
+	pos = nil,
+	render = "P",
+	p = 0,
+	currentNum = 0,
+	needNum = 0,
+	priority = 4,
+}
+
+local DragonTemplates = {dragon1}
+
+local function clearTemplatesData()
+	for k, v in ipairs(DragonTemplates) do
+		v.currentNum = 0
+	end
+end
+
+local function copyTable(source)
+	local t = {}
+	for k, v in ipairs(source) do
+		table.insert(t, v)
+	end
+	return t
+end
+
+local function addDragonTemplate(templte)
+	table.insert(DragonTemplates, templte)
+end
+
+local function updateDragonP()
+	if currentWave < 7 then
+		dragon1.needNum = 5
+		dragon1.p = 1
+	
+		-- yellow dragon
+	elseif currentWave >= 7 and currentWave < 34 then
+		
+		if currentWave == 7 then
+			dragon1.needNum = 5
+			addDragonTemplate(dragon2)
+		end
+		
+		if currentWave == 7 then
+			dragon2.needNum = 1
+		elseif currentWave == 14 then
+			dragon2.needNum = 2
+		elseif currentWave == 20 then
+			dragon2.needNum = 3
+		elseif currentWave == 28 then
+			dragon2.needNum = 4
+		end
+		-- red dragon
+	elseif currentWave >= 35 and currentWave < 63 then
+		
+		if currentWave == 35 then
+			dragon3.needNum = 5
+			addDragonTemplate(dragon3)
+		end
+		
+		if currentWave == 35 then
+			dragon3.needNum = 1
+			dragon2.needNum = 3
+			dragon1.needNum = 1
+		elseif currentWave == 43 then
+			dragon3.needNum = 2
+			dragon2.needNum = 2
+			dragon1.needNum = 1
+		elseif currentWave == 49 then
+			dragon3.needNum = 3
+			dragon2.needNum = 1
+			dragon1.needNum = 1
+		elseif currentWave == 58 then
+			dragon3.needNum = 4
+			dragon2.needNum = 1
+			dragon1.needNum = 5
+		end
+		-- green dragon
+	elseif currentWave > 62 then
+		
+		if currentWave ==  63 then
+			dragon4.needNum = 5
+			addDragonTemplate(dragon4)
+		end
+		
+	end
+end
 
 local player
 local PLAYER_HEIGHT = 100
@@ -137,21 +255,87 @@ local function getRowSpeedFactor()
 	return ( 1.3 * x + 0.5) * ( 1.3 * x + 0.5 ) + 1 
 end
 
-local function generateEnemyRow()
+local currentSlots = {}
+
+local function printCurrentSlots()
+	local str = "slots : "
+	for k, v in ipairs(currentSlots) do
+		str = str .." "..tostring(v.render)
+	end
+	print(str)
+end
+
+local function generateEnemyRow(endPosY)
+	currentWave = currentWave + 1
+	
+	updateDragonP()
+	
 	-- caculate the bias apply to SCREEN_WIDTH
 	local posY = - DRAGON_HEIGHT/2
 	local posX = (SCREEN_WIDTH - TOTAL_WIDTH_DRAGONS)/2 + DRAGON_WIDTH/2
 	local row = {}
+	
+	local slots = {}
+	
+	for i = 1, COUNTPERROW do
+		slots[i] = false
+	end
+	
+	local templatesStack = copyTable(DragonTemplates)
+	
+	print("size: "..tostring(#templatesStack))
+	local currentTemplate
+	
+	local full = false
+	 
+	while not full do
+		
+		full = true
+		
+		local rIndex = math.random(COUNTPERROW)
+		
+		-- got the head element
+		local size = #templatesStack
+		
+		currentTemplate = templatesStack[size]
+		print("size: "..tostring(size))
+		
+		if slots[rIndex] == false then
+			slots[rIndex] = currentTemplate
+			currentTemplate.currentNum = currentTemplate.currentNum + 1
+			print("priority: "..tostring(currentTemplate.priority))
+			print("currNum: "..tostring(currentTemplate.currentNum))
+			print("needNum: "..tostring(currentTemplate.needNum))
+			if currentTemplate.currentNum >= currentTemplate.needNum then
+				print("upate the stack")
+				table.remove(templatesStack)
+			end	
+		end
+		
+		for i = 1, COUNTPERROW do
+			if slots[i] == false then
+				full = false
+			end
+		end
+	end	
+	
+	currentSlots = copyTable(slots)
+	
+	clearTemplatesData()
+	
 	for i = 1, COUNTPERROW do
 		local dragon = {}
 		local x = posX + (DRAGON_SEP + DRAGON_WIDTH) * (i - 1) 
 		local y = posY
 		
-		dragon.hp = dragon1.hp
+		local template = slots[i]
+		
+		dragon.hp = template.hp
 		dragon.pos = initPos(x, y)
 		dragon.alive = true
 		dragon.type = DRAGON
 		dragon.index = i
+		dragon.render = template.render
 		
 		AIInfo.roads[i].canThrough = false
 		
@@ -162,11 +346,11 @@ local function generateEnemyRow()
 	
 	-- we only care about the speed of row itself
 	row.speed = dragon1.speed * getRowSpeedFactor()
-	debugStr = "row speed : "..tostring(row.speed)
+	row.endPosY = endPosY
 	-- pos of row just equal to pos of the first dragon in the row
 	row.pos = initPos(SCREEN_WIDTH/2, row[1].pos.y )
 	
-	table.insert(enemyRowList, row)
+	table.insert(enemyRowList, row)	
 end
 
 local function init()
@@ -179,7 +363,9 @@ local function init()
 	player.type = PLAYER
 	player.alive = true
 	
-	generateEnemyRow()
+	math.randomseed(os.time())
+	
+	generateEnemyRow(SCREEN_HEIGHT + DRAGON_HEIGHT/2)
 end
 
 local function updateBullets(dt)
@@ -409,7 +595,7 @@ local function think(dt)
 	
 	local moveTime = 0.3
 	
-	local attackSuccessTime = (currDragon.hp / player.bulletTemplate.attack) * player.emmitFrequency / 2 + moveTime + t1
+	local attackSuccessTime = (currDragon.hp / player.bulletTemplate.attack) * player.emmitFrequency  + moveTime + t1
 	--pushDebugStr("st: "..tostring(attackSuccessTime))
 	
 	local failureTime = s1 / currRow.speed
@@ -529,19 +715,15 @@ local function updatePlayer(dt)
 	end
 end
 
+local setSubHeightDragon = false
+local isGeneratedSubHeight = false
+local subHeightDraginWave = 0
+
 local function updateEnemy(dt)
 	for k, v in ipairs(enemyRowList) do
 		local row = v
 		
-		-- clear this row if need
-		if row.pos.y > SCREEN_HEIGHT + DRAGON_HEIGHT then
-			for index, dragon in ipairs(row) do
-				clearObjectList(dragon)
-			end
-			table.remove(enemyRowList, k)
-			generateEnemyRow()
-			break
-		end
+		local size = #enemyRowList
 		
 		-- remove the dead one first
 		for index, dragon in ipairs(row) do
@@ -551,6 +733,39 @@ local function updateEnemy(dt)
 			end
 		end
 		
+		if not setSubHeightDragon and row.pos.y > SCREEN_HEIGHT * 0.5 + DRAGON_HEIGHT then
+			
+			local r = math.random()
+			setSubHeightDragon = true
+			if r > 0.95 then
+				pushDebugStr("sub height dragon r: "..tostring(r))
+				
+				generateEnemyRow(SCREEN_HEIGHT + DRAGON_HEIGHT/2)
+				
+				row.endPosY = SCREEN_HEIGHT * 1.5 + DRAGON_HEIGHT/2
+				
+				subHeightDraginWave = currentWave
+				
+				break
+			end
+		end
+			
+		if row.pos.y > row.endPosY then
+			for index, dragon in ipairs(row) do
+				clearObjectList(dragon)
+			end
+			
+			if row.endPosY <= SCREEN_HEIGHT + DRAGON_HEIGHT/2 then
+				generateEnemyRow(SCREEN_HEIGHT + DRAGON_HEIGHT/2)
+			end
+			
+			if setSubHeightDragon then
+				setSubHeightDragon = false
+			end
+			
+			table.remove(enemyRowList, k)
+			break
+		end
 		
 		for index, dragon in ipairs(row) do
 			dragon.pos.y = dragon.pos.y + row.speed * dt
@@ -655,7 +870,7 @@ local function rasterization()
 				posPacket[posX][posY] = {}
 			end
 			
-			posPacket[posX][posY] = "d"
+			posPacket[posX][posY] = dragon.render
 		
 		end
 		
@@ -694,6 +909,10 @@ local function render()
 		rasterization()
 		convertPosPacket()
 		printResult()
+		print("wave : "..tostring(currentWave))
+		print("num1 : "..tostring(dragon1.needNum))
+		print("num2 : "..tostring(dragon2.needNum))
+		printCurrentSlots()
 		printDebugStr()
 		clearDebugStr()
 		posPacket = {}
