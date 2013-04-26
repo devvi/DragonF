@@ -71,7 +71,8 @@ local bullet1 = {
 	type = BULLET,
 	attack = 400,
 	speed = 600,
-	pos = nil
+	pos = nil,
+	render = "."
 }
 
 bullet1.update
@@ -92,9 +93,12 @@ local function generateBullet(template, posX, posY)
 	bullet.attack = template.attack
 	bullet.speed = template.speed
 	bullet.pos = initPos(posX, posY)
+	bullet.render = template.render
 	bullet.type = template.type
 	bullet.update = template.update()
 	bullet.alive = true
+	bullet.width = 0
+	bullet.height = 0
 	
 	-- set table address to the key of objectList
 	insertObjectList(bullet, bullet.pos)
@@ -152,6 +156,84 @@ local dragon4 = {
 }
 
 local DragonTemplates = {dragon1}
+
+local GEM_HEIGHT = 30
+local GEM_WIDTH = 30
+local GEM_SPEED = 300
+
+local gem1 = {
+	price = 1,
+	render = "g",
+	speed = GEM_SPEED,
+	p = 0.7
+}
+
+local gem2 = {
+	price = 10,
+	render = "G",
+	speed = GEM_SPEED,
+	p = 0.2
+}
+
+local gem3 = {
+	price = 50,
+	render = "G",
+	speed = GEM_SPEED,
+	p = 0.2
+}
+
+local gemTemplates = {gem1, gem2, gem3}
+
+local function updateGemP()
+	if currentWave < 20 then
+		gem1.p = 0.9
+		gem2.p = 0.1
+		gem3.p = 0
+	elseif currentWave < 50 then
+		gem1.p = 0.6
+		gem2.p = 0.2
+		gem3.p = 0.2
+	end
+end
+
+local function generateGem(template, posX, posY, speed)
+	local gem = {}
+	gem.price = template.price
+	gem.render = template.render
+	gem.pos = initPos(posX, posY)
+	gem.speed = speed
+	gem.width = GEM_WIDTH
+	gem.height = GEM_HEIGHT
+	
+	local xBias = 0
+	local yBias = 0
+	local r = math.random()
+	
+	if r < 0.5 then
+		xBias = - (r * 2) * 1
+	else
+		xBias =  r / 2 
+	end
+	
+	local r = math.random()
+	
+	if r < 0.5 then
+		yBias = - (r * 2) * 1
+	else
+		yBias =  r / 2 
+	end
+	
+	local impulseX = xBias * 150
+	
+	local impulseY = yBias * 100
+	impulseY = impulseY - (speed) * 0.5
+	
+	gem.impulse = {x = impulseX, y = impulseY}
+	gem.impulseTime = math.random() * 0.7 + 0.7
+	
+	
+	table.insert(gemList, gem)
+end
 
 local function clearTemplatesData()
 	for k, v in ipairs(DragonTemplates) do
@@ -218,7 +300,7 @@ local function updateDragonP()
 			dragon2.needNum = 1
 			dragon1.needNum = 5
 		end
-		-- green dragon
+		-- green dragon TODO
 	elseif currentWave > 62 then
 		
 		if currentWave ==  63 then
@@ -235,7 +317,8 @@ local PLAYER_WIDTH = 100
 
 local Player = 
 {
-	pos = nil
+	pos = nil,
+	coin = 0
 }
 
 -- attack frequency
@@ -269,6 +352,7 @@ local function generateEnemyRow(endPosY)
 	currentWave = currentWave + 1
 	
 	updateDragonP()
+	updateGemP()
 	
 	-- caculate the bias apply to SCREEN_WIDTH
 	local posY = - DRAGON_HEIGHT/2
@@ -298,16 +382,13 @@ local function generateEnemyRow(endPosY)
 		local size = #templatesStack
 		
 		currentTemplate = templatesStack[size]
-		print("size: "..tostring(size))
 		
 		if slots[rIndex] == false then
 			slots[rIndex] = currentTemplate
 			currentTemplate.currentNum = currentTemplate.currentNum + 1
-			print("priority: "..tostring(currentTemplate.priority))
-			print("currNum: "..tostring(currentTemplate.currentNum))
-			print("needNum: "..tostring(currentTemplate.needNum))
+			
 			if currentTemplate.currentNum >= currentTemplate.needNum then
-				print("upate the stack")
+				
 				table.remove(templatesStack)
 			end	
 		end
@@ -336,12 +417,26 @@ local function generateEnemyRow(endPosY)
 		dragon.type = DRAGON
 		dragon.index = i
 		dragon.render = template.render
+		dragon.width = DRAGON_WIDTH
+		dragon.height = DRAGON_HEIGHT
 		
 		AIInfo.roads[i].canThrough = false
 		
 		insertObjectList(dragon, dragon.pos)
 		
 		table.insert(row, dragon)
+		local r = math.random()
+		local rSum = 0
+		
+		for k, v in ipairs(gemTemplates) do
+			local gem = v
+			rSum = rSum + gem.p
+			if r < rSum then
+				dragon.gemTemplate = gem
+				break
+			end	
+		end 
+		
 	end
 	
 	-- we only care about the speed of row itself
@@ -353,7 +448,45 @@ local function generateEnemyRow(endPosY)
 	table.insert(enemyRowList, row)	
 end
 
-local function init()
+local function removeGem(gem)
+	for k, v in ipairs(gemList) do
+		if v == gem then
+			table.remove(gemList, k)
+			break
+		end
+	end
+end
+
+local impulseTime = 1
+
+local function updateGems(dt)
+	for k, v in ipairs(gemList) do
+		local gem = v
+		gem.pos.x = gem.pos.x + gem.impulse.x * dt
+		
+		gem.pos.y = gem.pos.y + (gem.speed * dt) + gem.impulse.y * dt
+		
+		if gem.impulse.x > 0 then
+			gem.impulse.x = gem.impulse.x - math.abs(gem.impulse.x) * dt * gem.impulseTime
+		elseif gem.impulse.x < 0 then
+			gem.impulse.x = gem.impulse.x + math.abs(gem.impulse.x) * dt * gem.impulseTime
+		else
+			gem.impulse.x = 0
+		end
+		
+		if gem.impulse.y < gem.speed * 2 then
+			gem.impulse.y = gem.impulse.y + gem.speed * dt
+		end
+		
+		if gem.pos.y > SCREEN_HEIGHT + GEM_HEIGHT/2 then
+			-- remove this gem
+			removeGem(gem)
+		end
+		
+	end
+end
+
+local function createPlayer()
 	player = {}
 	player.pos =  initPos(SCREEN_WIDTH/2, SCREEN_HEIGHT - PLAYER_HEIGHT/2)
 	player.emmitTimer = 0
@@ -362,6 +495,16 @@ local function init()
 	player.bulletTemplate = bullet1
 	player.type = PLAYER
 	player.alive = true
+	player.width = PLAYER_WIDTH
+	player.height = PLAYER_HEIGHT
+	
+	player.render = "p"
+	player.coin = 0
+end
+
+local function init()
+	
+	createPlayer()
 	
 	math.randomseed(os.time())
 	
@@ -379,35 +522,71 @@ local function getItem(index,row)
 	return row[index]
 end
 
+local function checkBoxCollide(box1, box2)
+	local left1 = box1.pos.x - box1.width/2
+	local left2 = box2.pos.x - box2.width/2
+	local right1 = box1.pos.x + box1.width/2
+	local right2 = box2.pos.x + box2.width/2
+	local top1 = box1.pos.y + box1.height/2
+	local top2 = box2.pos.y + box2.height/2
+	local bottom1 = box1.pos.y - box1.height/2
+	local bottom2 = box2.pos.y - box2.height/2
+	
+	if bottom1 > top2 then
+		 return false
+	end	
+	
+	if top1 < bottom2 then
+		 return false
+	end
+
+	if right1 < left2 then
+		 return false
+	end
+	
+	if left1 > right2 then
+		 return false
+	end
+	
+	return true
+end
+
 local function checkCollide()
 	for k, bullet in ipairs(bulletList) do
 		for i, row in ipairs(enemyRowList) do
 			for j, dragon in ipairs(row) do
 				
-				if ( bullet.pos.x <= dragon.pos.x + DRAGON_WIDTH/2 and
-					bullet.pos.x  >= dragon.pos.x - DRAGON_WIDTH/2 ) and
-				( bullet.pos.y <= dragon.pos.y + DRAGON_HEIGHT/2 and 
-					bullet.pos.y >= dragon.pos.y - DRAGON_HEIGHT/2 ) and bullet.alive then
-					-- decrease hps
-					dragon.hp = dragon.hp - bullet.attack
+				if checkBoxCollide(bullet, dragon) and bullet.alive then
+					
+					-- decrease hp
+					if dragon.hp > 0 then
+						dragon.hp = dragon.hp - bullet.attack
+					end
+					
 					bullet.alive = false
-					--pushDebugStr("bullet: "..tostring(bullet).." dragon hurt: "..tostring(dragon.index).." hp: "..tostring(dragon.hp))
-					if dragon.hp < 0 then
-						dragon.hp = 0
-						--debugStr = "dragon die"
-						--pushDebugStr("end dragon die")
+					
+					if dragon.hp <= 0 then
+					
 						dragon.alive = false
+						
+						generateGem(dragon.gemTemplate, dragon.pos.x, dragon.pos.y, row.speed)
 					end
 				end
 				
 				-- check player collide with dragon
-				if math.abs ( player.pos.x - dragon.pos.x ) < PLAYER_WIDTH/2 - 10 and
-					 math.abs( player.pos.y - dragon.pos.y ) < PLAYER_HEIGHT/2 then
+				if checkBoxCollide(player, dragon) then
 					player.alive = false
 				end
 				
 			end
 		end
+	end
+	
+	for k, gem in ipairs(gemList) do
+		if checkBoxCollide(gem, player) then
+			player.coin = player.coin + gem.price
+			removeGem(gem)
+		end 	
 	end
 end
 
@@ -450,7 +629,7 @@ local updateMoveTo = function(action, dt)
 			action.timer = action.timer + dt/action.duration
 			action.object.pos.x = action.initPos.x *  ( 1 - action.timer) + action.targetPos.x * action.timer
 			action.object.pos.y = action.initPos.y * ( 1 - action.timer)  + action.targetPos.y * action.timer						
-			debugStr = "update move to posx: "..tostring(action.object.pos.x)
+			
 		else
 			action.object.pos.x = action.targetPos.x
 			action.object.pos.y = action.targetPos.y
@@ -480,7 +659,7 @@ local updateWait = function(action, dt)
 		if action.timer < 1 and action.timer >=0 then
 			-- do nothing 
 			action.timer = action.timer + dt/action.duration
-			debugStr = "update wait timer: "..tostring(action.timer)					
+			--debugStr = "update wait timer: "..tostring(action.timer)					
 		elseif action.timer >= 1 then
 			--debugStr = "wait done"
 			if action.doneCallback then
@@ -500,6 +679,27 @@ local function generateWaitAction(duration, doneCallback)
 	action.duration = duration
 	action.timer = 0
 	action.doneCallback = doneCallback
+	
+	return action
+end
+
+local updateCheck = function(action, dt)	
+	if not action.isDone then
+		if action.checkCallback() then
+			action.isDone = true
+		else
+			action.isDone = false
+		end
+	end
+end
+
+local function generateCheckAction(checkCallback)
+	local action = {}
+
+	action.update = updateCheck
+	action.isDone = false
+	action.timer = 0
+	action.checkCallback = checkCallback
 	
 	return action
 end
@@ -580,7 +780,7 @@ local function think(dt)
 		AIInfo.currRoadIndex = currDragon.index
 		
 		if currDragon == AIInfo.targetDragon then
-			debugStr = "filter currDragon.index: "..tostring(currDragon.index)
+			--debugStr = "filter currDragon.index: "..tostring(currDragon.index)
 			return
 		end
 		
@@ -595,7 +795,7 @@ local function think(dt)
 	
 	local moveTime = 0.3
 	
-	local attackSuccessTime = (currDragon.hp / player.bulletTemplate.attack) * player.emmitFrequency  + moveTime + t1
+	local attackSuccessTime = (currDragon.hp / player.bulletTemplate.attack) * player.emmitFrequency + t1 + moveTime
 	--pushDebugStr("st: "..tostring(attackSuccessTime))
 	
 	local failureTime = s1 / currRow.speed
@@ -604,21 +804,18 @@ local function think(dt)
 	
 	
 	if attackSuccessTime < failureTime then
-		debugStr = "st < ft"
+		--debugStr = "st < ft"
 		-- it's worth shooting
 		local targetPos = {x = currDragon.pos.x, y = player.pos.y}
 		
 		local moveToAction = generateMoveToAction(player, player.pos, targetPos, moveTime)
 		-- wait more than correct time 0.1 second
 		
-		local waitAction = generateWaitAction(attackSuccessTime - moveTime - t1, function()
-					AIInfo.targetDragon = nil
-					
-					AIInfo.roads[AIInfo.currRoadIndex].canThrough = true
-					
+		local checkAction = generateCheckAction(function()
+					return not currDragon.alive
 				end)
 		
-		local sequence = {moveToAction, waitAction}
+		local sequence = {moveToAction, checkAction}
 		
 		local doAll = generateSequenceAction(sequence)
 		
@@ -812,72 +1009,11 @@ local function clearWithStr(str)
 	end	
 end
 
-local function rasterization()
-	local hRatio = FAKE_SCREEN_WIDTH/SCREEN_WIDTH
-	local vRatio = FAKE_SCREEN_HEIGHT/SCREEN_HEIGHT
+local function raseterizationHelper(object, hRatio, vRatio)
 	
-	for k, v in ipairs(bulletList) do
-		local bullet = v
-		local posX = bullet.pos.x * hRatio
-		local posY = bullet.pos.y * vRatio
-		if math.ceil(posX) - posX >= 0.5 then
-			posX = math.floor(posX)
-		else
-			posX = math.ceil(posX)
-		end
-		
-		if math.ceil(posY) - posY >= 0.5 then
-			posY = math.floor(posY)
-		else
-			posY = math.ceil(posY)
-		end
-		
-		if posPacket[posX] == nil then
-			posPacket[posX] = {}
-		end
-		
-		if posPacket[posX][posY] == nil then
-			posPacket[posX][posY] = {}
-		end
-		
-		posPacket[posX][posY] = "."
-	end
+	local posX = object.pos.x * hRatio
+	local posY = object.pos.y * vRatio
 	
-	for k, v in ipairs(enemyRowList) do
-		local row = v
-		
-		
-		for n, dragon in ipairs(row) do
-			local posX = dragon.pos.x * hRatio
-			local posY = dragon.pos.y * vRatio
-			if math.ceil(posX) - posX >= 0.5 then
-				posX = math.floor(posX)
-			else
-				posX = math.ceil(posX)
-			end
-		
-			if math.ceil(posY) - posY >= 0.5 then
-				posY = math.floor(posY)
-			else
-				posY = math.ceil(posY)
-			end
-		
-			if posPacket[posX] == nil then
-				posPacket[posX] = {}
-			end
-			
-			if posPacket[posX][posY] == nil then
-				posPacket[posX][posY] = {}
-			end
-			
-			posPacket[posX][posY] = dragon.render
-		
-		end
-		
-	end
-	
-	local posX = player.pos.x * hRatio
-	local posY = player.pos.y * vRatio
 	if math.ceil(posX) - posX >= 0.5 then
 		posX = math.floor(posX)
 	else
@@ -898,7 +1034,35 @@ local function rasterization()
 		posPacket[posX][posY] = {}
 	end
 
-	posPacket[posX][posY] = "p"
+	posPacket[posX][posY] = object.render
+		
+end
+
+local function rasterization()
+	local hRatio = FAKE_SCREEN_WIDTH/SCREEN_WIDTH
+	local vRatio = FAKE_SCREEN_HEIGHT/SCREEN_HEIGHT
+	
+	for k, v in ipairs(bulletList) do
+		local bullet = v
+		raseterizationHelper(bullet, hRatio, vRatio)
+	end
+	
+	for k, v in ipairs(gemList) do
+		local gem = v
+		raseterizationHelper(gem, hRatio, vRatio)
+	end
+	
+	for k, v in ipairs(enemyRowList) do
+		local row = v
+		
+		
+		for n, dragon in ipairs(row) do
+			raseterizationHelper(dragon, hRatio, vRatio)
+		end
+		
+	end
+	
+	raseterizationHelper(player, hRatio, vRatio)
 end
 
 local function render()
@@ -910,12 +1074,13 @@ local function render()
 		convertPosPacket()
 		printResult()
 		print("wave : "..tostring(currentWave))
-		print("num1 : "..tostring(dragon1.needNum))
-		print("num2 : "..tostring(dragon2.needNum))
+		print("coin : "..tostring(player.coin))
+		print("debug: "..tostring(debugStr))
 		printCurrentSlots()
 		printDebugStr()
 		clearDebugStr()
 		posPacket = {}
+		debugStr = ""
 	end
 end
 
@@ -926,6 +1091,7 @@ local function loop(dt)
 		updateBullets(dt)
 		doAI(dt)
 		updatePlayer(dt)
+		updateGems(dt)
 		updateEnemy(dt)
 	else
 		return false
